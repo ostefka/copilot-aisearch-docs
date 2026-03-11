@@ -1,4 +1,4 @@
-# Intelligent Document Search with Azure AI Search & Copilot Studio
+# Intelligent Document Search with Azure AI Search & M365 Copilot
 
 > **Enterprise knowledge retrieval that you can tune — unlike SharePoint's out-of-the-box search.**
 
@@ -16,17 +16,17 @@ Organizations store critical knowledge in documents — product specifications, 
 
 ## What We Built
 
-An end-to-end system that connects **Microsoft Copilot Studio** agents to enterprise documents through **Azure AI Search**, with full control over ingestion quality and search accuracy.
+An end-to-end system that connects **M365 Copilot declarative agents** to enterprise documents through **Azure AI Search**, with full control over ingestion quality and search accuracy.
 
 ```
 ┌──────────────┐                    ┌──────────────┐                    ┌──────────────────┐
-│   DOCUMENTS  │                    │  INTELLIGENT │                    │   COPILOT STUDIO │
-│              │  ── Ingestion ──▶  │    SEARCH    │  ◀── Queries ───  │      AGENT       │
-│ Word, PDF,   │     Pipeline       │    INDEX     │     via MCP /     │                  │
-│ PowerPoint   │                    │              │     OpenAPI       │  Natural language │
-│              │                    │  Azure AI    │                    │  answers with     │
-│ SharePoint / │                    │  Search      │                    │  citations        │
-│ Local        │                    │              │                    │                  │
+│   DOCUMENTS  │                    │  INTELLIGENT │                    │  M365 COPILOT    │
+│              │  ── Ingestion ──▶  │    SEARCH    │  ◀── Queries ───  │  DECLARATIVE     │
+│ Word, PDF,   │     Pipeline       │    INDEX     │     via OpenAPI   │  AGENT           │
+│ PowerPoint   │                    │              │     Plugin        │                  │
+│              │                    │  Azure AI    │                    │  Natural language │
+│ SharePoint / │                    │  Search      │                    │  answers with     │
+│ Local        │                    │              │                    │  citations        │
 └──────────────┘                    └──────────────┘                    └──────────────────┘
 ```
 
@@ -36,7 +36,7 @@ An end-to-end system that connects **Microsoft Copilot Studio** agents to enterp
 |---|---|---|
 | **Ingestion Pipeline** | Extracts, processes, and indexes document content | Garbage in → garbage out. Quality ingestion is the foundation |
 | **Azure AI Search** | Stores and retrieves documents using semantic + hybrid search | Fine-tunable relevance, vector search, per-user security |
-| **Copilot Studio Integration** | Connects the index to conversational agents (MCP + OpenAPI) | Users get answers in natural language, not search results |
+| **M365 Copilot Integration** | Connects the index to a declarative agent via OpenAPI plugin | Users get answers in natural language, not search results |
 
 ---
 
@@ -110,77 +110,77 @@ Unlike SharePoint's managed search, every aspect of Azure AI Search can be confi
 
 ---
 
-## Layer 3: Copilot Studio Integration — Two Connection Methods
+## Layer 3: M365 Copilot Integration — OpenAPI Plugin
 
-The search index is exposed to Copilot Studio agents through two complementary interfaces:
+The search index is exposed to **M365 Copilot** through a **declarative agent** with an **OpenAPI plugin**. The agent calls standard REST endpoints — no custom protocol needed.
 
-### MCP (Model Context Protocol)
-
-The primary integration for **Copilot Studio agents**. MCP is a standardized protocol that lets AI agents discover and use tools dynamically.
-
-| Feature | Detail |
-|---|---|
-| **Protocol** | Streamable HTTP, session-based |
-| **Tools available** | `search_documents` — semantic/hybrid search with filters |
-| | `smart_search` — AI query rewriting + multi-query fusion |
-| | `search_and_display` — formatted results with citations |
-| | `get_document` — retrieve a specific document by ID |
-| | `list_categories` — browse available document categories |
-| **Authentication** | OAuth 2.0 via APIM — per-user tokens, On-Behalf-Of flow |
-| **Security** | APIM handles JWT validation + IP filtering; MCP server trusts APIM headers |
-
-### OpenAPI Plugin (REST API)
-
-For **M365 Copilot declarative agents** and any REST-capable client. The same search logic, exposed as standard REST endpoints.
+### REST API Endpoints
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/search` | Keyword, semantic, or hybrid search with filters |
-| `POST /api/smart-search` | AI-powered multi-query search |
-| `GET /api/documents/{id}` | Retrieve specific document |
-| `GET /api/categories` | List categories |
+| `POST /api/smart-search` | AI-powered multi-query search with query rewriting |
+| `GET /api/documents/{id}` | Retrieve a specific document by ID |
+| `GET /api/categories` | List available document categories |
 | `GET /api/openapi.yaml` | Self-describing API spec for plugin registration |
 
-**Both interfaces share the same backend** — same search service, same OBO authentication, same per-user RBAC. Zero code duplication.
+### How it works
+
+1. The **declarative agent** is registered in M365 Copilot with an OpenAPI plugin pointing to the REST API
+2. When a user asks a question, M365 Copilot invokes the appropriate API endpoint
+3. The API runs the search against Azure AI Search using the user's identity (On-Behalf-Of flow)
+4. Results are returned with citations — the agent synthesizes a natural language answer
+
+### Why OpenAPI plugin
+
+| Advantage | Detail |
+|---|---|
+| **Standard REST** | No custom protocols — any HTTP client can call the API |
+| **Self-describing** | OpenAPI spec at `/api/openapi.yaml` — the agent auto-discovers available operations |
+| **Per-user security** | OAuth 2.0 + On-Behalf-Of — each query runs with the user's own permissions |
+| **Shared backend** | Same search service, same logic — MCP support can be added later if needed |
 
 ---
 
 ## Architecture Overview
 
 ```
-                            ┌────────────────────────┐
-                            │     APIM Gateway       │
-                            │  OAuth + IP Filtering  │
-                            └──────────┬─────────────┘
-                                       │
-                          ┌────────────┴────────────┐
-                          │                         │
-                    POST /mcp                 POST /api/*
-                    (MCP Protocol)            (REST / OpenAPI)
-                          │                         │
-                          ▼                         ▼
-                    ┌─────────────────────────────────────┐
-                    │        Container App (Node.js)       │
-                    │                                      │
-                    │   MCP Server  ←──→  REST API         │
-                    │       │               │               │
-                    │       └───── SearchService ──────┘   │
-                    │              (shared logic)           │
-                    └──────────────────┬───────────────────┘
-                                       │ On-Behalf-Of
-                                       │ (per-user token)
-                                       ▼
-                              ┌─────────────────┐
-                              │  Azure AI Search │
-                              │  (RBAC, no keys) │
-                              └─────────────────┘
+    ┌─────────────────────┐
+    │  M365 Copilot        │
+    │  Declarative Agent   │
+    │  (OpenAPI Plugin)    │
+    └──────────┬──────────┘
+               │ POST /api/*
+               │ (REST + OAuth)
+               ▼
+    ┌────────────────────────┐
+    │     APIM Gateway       │
+    │  OAuth + IP Filtering  │
+    └──────────┬─────────────┘
+               │
+               ▼
+    ┌─────────────────────────────────────┐
+    │        Container App (Node.js)       │
+    │                                      │
+    │         REST API (OpenAPI)            │
+    │              │                        │
+    │        SearchService                  │
+    │    (search, smart-search, etc.)       │
+    └──────────────────┬───────────────────┘
+                       │ On-Behalf-Of
+                       │ (per-user token)
+                       ▼
+              ┌─────────────────┐
+              │  Azure AI Search │
+              │  (RBAC, no keys) │
+              └─────────────────┘
 ```
 
 **Key design decisions:**
-- **APIM offloads OAuth** — the MCP server never validates tokens itself; APIM does it and forwards trusted headers
+- **APIM offloads OAuth** — the server never validates tokens itself; APIM does it and forwards trusted headers
 - **On-Behalf-Of flow** — each user's query runs with their own permissions; the system doesn't use a service account
 - **No API keys** — Azure AI Search is accessed exclusively via Managed Identity + RBAC
-- **Single container** — MCP and REST API coexist in one deployment, sharing all business logic
+- **OpenAPI-first** — standard REST API with self-describing spec; declarative agent registers it as a plugin
 
 ---
 
@@ -193,7 +193,7 @@ For structured data, **Dataverse** (the Power Platform data store) provides a co
 | Approach | Best For | Search Engine |
 |---|---|---|
 | **Azure AI Search** (this solution) | Unstructured documents — Word, PDF, PowerPoint | Dedicated AI Search with full tuning |
-| **Dataverse Tables + Copilot Studio Knowledge** | Structured data — product catalogs, FAQs, pricing | Dataverse Search (Azure Search under the hood) |
+| **Dataverse Tables + Copilot Knowledge** | Structured data — product catalogs, FAQs, pricing | Dataverse Search (Azure Search under the hood) |
 | **Combined** | Both document knowledge and structured data | Agent uses both sources based on the question |
 
 ### How Dataverse fits in
@@ -202,13 +202,13 @@ For structured data, **Dataverse** (the Power Platform data store) provides a co
 |---|---|
 | **Store structured data** | Create tables for products, FAQs, processes — proper columns and data types |
 | **Search** | Dataverse Search (powered by Azure Search) indexes all searchable columns automatically |
-| **Copilot Studio integration** | Add Dataverse tables as knowledge sources — agent can query them natively |
+| **Copilot integration** | Add Dataverse tables as knowledge sources — agent can query them natively |
 | **Security** | Dataverse security roles, business units, row-level security |
 | **No custom code** | Data import via Excel, Power Apps forms; search is built-in |
 
 ### When to combine both approaches
 
-A **Copilot Studio agent** can connect to **multiple knowledge sources simultaneously**:
+A **Copilot agent** can connect to **multiple knowledge sources simultaneously**:
 
 - *"What products do we offer?"* → Dataverse product catalog (structured)
 - *"What's the process for changing a customer's product?"* → Azure AI Search documents (unstructured)
@@ -228,7 +228,7 @@ This gives the agent comprehensive coverage — structured data for lookups and 
 | **Query understanding** | Basic keyword matching | AI rewriting + synonym expansion + bilingual |
 | **When it fails** | Accept it | Diagnose and fix it |
 | **Relevance tuning** | Not possible | Scoring profiles, semantic config, boosting |
-| **Integration** | SharePoint-only | MCP + REST API — any AI agent |
+| **Integration** | SharePoint-only | OpenAPI plugin — any AI agent |
 | **Structured data** | N/A | Dataverse for tables + catalogs |
 
 ### The bottom line
@@ -272,11 +272,11 @@ Key challenges that were solved during validation:
 | **Embeddings** | Azure OpenAI (text-embedding-3-large) | 3072-dim vectors for semantic search |
 | **Search** | Azure AI Search | Hybrid search, semantic ranking, RBAC |
 | **Gateway** | Azure API Management | OAuth validation, IP filtering, routing |
-| **Compute** | Azure Container Apps | Host the MCP + REST server |
+| **Compute** | Azure Container Apps | Host the REST API server |
 | **Auth** | Microsoft Entra ID | OAuth 2.0, On-Behalf-Of, per-user RBAC |
-| **Agent** | Microsoft Copilot Studio | Conversational AI interface for end users |
+| **Agent** | M365 Copilot (Declarative Agent) | Conversational AI interface for end users |
 | **Structured data** | Dataverse (optional) | Product catalogs, FAQs, structured knowledge |
 
 ---
 
-*Built with Azure AI services and Microsoft Copilot Studio. For technical implementation details, contact the project team.*
+*Built with Azure AI services and M365 Copilot. For technical implementation details, contact the project team.*
